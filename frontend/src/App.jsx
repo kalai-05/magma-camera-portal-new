@@ -13,7 +13,7 @@ import {
   Maximize
 } from 'lucide-react';
 
-const API_PROXY = 'http://localhost:8080/api';
+const API_PROXY = import.meta.env.VITE_API_URL || 'http://localhost:8080/api';
 const DEVICE_UUID = '144E782F-B379-C44C-A76D-85439144CD66';
 
 function App() {
