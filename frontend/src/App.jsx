@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import toast, { Toaster } from 'react-hot-toast';
+import { motion, AnimatePresence, useMotionValue, useSpring } from 'framer-motion';
 import { 
   Camera, 
   Power, 
@@ -27,11 +28,6 @@ function App() {
   const videoIntervalRef = useRef(null);
   const videoContainerRef = useRef(null);
 
-  useEffect(() => {
-    // Initial status check could go here if there was a status API
-    // Assuming sleep by default as per analysis
-  }, []);
-
   const wakeUpCamera = async (isManual = true) => {
     try {
       if (isManual) setIsWaking(true);
@@ -44,7 +40,6 @@ function App() {
       if (isManual) {
          toast.error("Failed to wake up the camera.");
       } else {
-         // If a heartbeat fails, the camera might have gone to sleep
          setCameraStatus('Sleep');
       }
     } finally {
@@ -52,14 +47,10 @@ function App() {
     }
   };
 
-  // Keep-alive heartbeat when the camera is Online
   useEffect(() => {
     let keepAliveInterval;
     if (cameraStatus === 'Online') {
-      // Hikvision battery cameras typically go to sleep after ~60s of inactivity.
-      // Sending a wakeUp or status check command every 30 seconds keeps it active.
       keepAliveInterval = setInterval(() => {
-        console.log("Sending keep-alive heartbeat to prevent camera sleep...");
         wakeUpCamera(false);
       }, 30000);
     }
@@ -67,7 +58,6 @@ function App() {
       if (keepAliveInterval) clearInterval(keepAliveInterval);
     };
   }, [cameraStatus]);
-
 
   const manualCapture = async (isAuto = false) => {
     if (cameraStatus === 'Sleep') {
@@ -77,23 +67,18 @@ function App() {
       return;
     }
     try {
-      // 1. Fetch the picture metadata which contains the actual gateway storage URL
       const response = await axios.get(
         `${API_PROXY}/ISAPI/Streaming/channels/1/picture?format=json&devIndex=${DEVICE_UUID}`
       );
       
       let finalUrl = null;
-      
-      // Some cameras might return direct binary stream, but gateway usually returns JSON
       if (response.data && response.data.PictureData && response.data.PictureData.url) {
-         // 2. Fetch the actual image binary using the provided URL
          const imgResponse = await axios.get(
            `${API_PROXY}${response.data.PictureData.url}`,
            { responseType: 'blob' }
          );
          finalUrl = URL.createObjectURL(imgResponse.data);
       } else if (response.data instanceof Blob) {
-         // Fallback if the camera behaves differently
          finalUrl = URL.createObjectURL(response.data);
       }
       
@@ -102,7 +87,6 @@ function App() {
       } else {
          throw new Error("Invalid picture format returned");
       }
-      
     } catch (error) {
       console.error("Failed to capture image", error);
       if (!isAuto) toast.error("Camera might still be waking up.");
@@ -129,7 +113,6 @@ function App() {
       isStreamActiveRef.current = true;
       
       try {
-        // Fetch RTSP URL for display context
         const response = await axios.post(
           `${API_PROXY}/ISAPI/System/streamMedia?format=json&devIndex=${DEVICE_UUID}`,
           {
@@ -143,22 +126,15 @@ function App() {
         console.error("Failed to fetch RTSP stream URL", error);
       }
 
-      // Start the seamless 'Live Video' loop via rapid snapshot polling
       const liveFrameLoop = async () => {
         if (!isStreamActiveRef.current) return;
-        
         try {
-          // Fetch the picture invisibly for the video stream
           await manualCapture(true);
-        } catch(e) { /* Ignore background frame drops */ }
-        
-        // As soon as the frame loads (or fails), schedule the next frame 
-        // using requestAnimationFrame for smoothness, with a small delay to prevent overload
+        } catch(e) {}
         if (isStreamActiveRef.current) {
-           setTimeout(() => requestAnimationFrame(liveFrameLoop), 500); // ~2 FPS stream
+           setTimeout(() => requestAnimationFrame(liveFrameLoop), 500);
         }
       };
-      
       liveFrameLoop();
     }
   };
@@ -173,12 +149,10 @@ function App() {
     
     try {
       if (!isAudioActive) {
-        // Start two-way audio session
         await axios.get(`${API_PROXY}/ISAPI/System/TwoWayAudio/channels/1?format=json&devIndex=${DEVICE_UUID}`);
         setIsAudioActive(true);
         toast.success("Two-way audio connection established.");
       } else {
-        // Stop audio
         setIsAudioActive(false);
         toast.success("Two-way audio closed.");
       }
@@ -190,14 +164,11 @@ function App() {
 
   const toggleFullscreen = () => {
     if (!videoContainerRef.current) return;
-    
     if (!document.fullscreenElement) {
       if (videoContainerRef.current.requestFullscreen) {
         videoContainerRef.current.requestFullscreen();
-      } else if (videoContainerRef.current.webkitRequestFullscreen) { /* Safari */
+      } else if (videoContainerRef.current.webkitRequestFullscreen) {
         videoContainerRef.current.webkitRequestFullscreen();
-      } else if (videoContainerRef.current.msRequestFullscreen) { /* IE11 */
-        videoContainerRef.current.msRequestFullscreen();
       }
     } else {
       if (document.exitFullscreen) {
@@ -206,14 +177,38 @@ function App() {
     }
   };
 
+  const mouseX = useMotionValue(0);
+  const mouseY = useMotionValue(0);
+  const cursorX = useSpring(mouseX, { damping: 40, stiffness: 200 });
+  const cursorY = useSpring(mouseY, { damping: 40, stiffness: 200 });
+
   useEffect(() => {
-    return () => {
-      if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
+    const handleMouseMove = (e) => {
+      mouseX.set(e.clientX);
+      mouseY.set(e.clientY);
     };
-  }, []);
+    const handleTouchMove = (e) => {
+      if (e.touches && e.touches[0]) {
+        mouseX.set(e.touches[0].clientX);
+        mouseY.set(e.touches[0].clientY);
+      }
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('touchmove', handleTouchMove);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('touchmove', handleTouchMove);
+    };
+  }, [mouseX, mouseY]);
 
   return (
-    <div className="min-h-screen bg-dark-950 text-gray-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-dark-950 text-gray-100 flex flex-col font-sans overflow-x-hidden relative">
+      <motion.div 
+        style={{ x: cursorX, y: cursorY, translateX: '-50%', translateY: '-50%' }}
+        className="fixed top-0 left-0 w-[600px] h-[600px] bg-magma-600/10 rounded-full blur-[140px] pointer-events-none z-0 opacity-50 sm:opacity-80"
+      />
+      <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(244,63,94,0.05),transparent_50%)] pointer-events-none" />
+      
       <Toaster 
         position="bottom-center" 
         toastOptions={{
@@ -227,182 +222,254 @@ function App() {
         }}
       />
       
-      {/* Top Navigation */}
-      <nav className="border-b border-dark-900/50 bg-dark-900/40 backdrop-blur-md px-6 py-4 flex items-center justify-between sticky top-0 z-50">
+      <motion.nav 
+        initial={{ y: -20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className="border-b border-dark-900/50 bg-dark-900/40 backdrop-blur-md px-6 py-4 flex items-center justify-between sticky top-0 z-50"
+      >
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-magma-500 to-magma-700 flex items-center justify-center shadow-lg shadow-magma-500/20">
+          <motion.div 
+            whileHover={{ rotate: 15 }}
+            className="w-10 h-10 rounded-full bg-gradient-to-br from-magma-500 to-magma-700 flex items-center justify-center shadow-lg shadow-magma-500/20"
+          >
             <Camera className="w-5 h-5 text-white" />
-          </div>
+          </motion.div>
           <div>
             <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-100 to-gray-400">
               MagmaPortal
             </h1>
-            <p className="text-xs text-gray-400 font-medium">Device Gateway Interface</p>
+            <p className="text-xs text-gray-400 font-medium tracking-wide">SECURE DEVICE INTERFACE</p>
           </div>
         </div>
         
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 bg-dark-800/80 px-4 py-2 rounded-full ring-1 ring-dark-800">
+          <motion.div 
+            layout
+            className="flex items-center gap-2 bg-dark-800/80 px-4 py-2 rounded-full ring-1 ring-dark-800 shadow-lg"
+          >
             <div className={`w-2.5 h-2.5 rounded-full ${cameraStatus === 'Online' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></div>
-            <span className="text-sm font-medium text-gray-300">Status: {cameraStatus}</span>
-          </div>
-          <button className="p-2.5 hover:bg-dark-800 rounded-full transition-colors text-gray-400 hover:text-white">
+            <span className="text-sm font-semibold text-gray-300 uppercase leading-none">{cameraStatus}</span>
+          </motion.div>
+          <motion.button 
+            whileHover={{ scale: 1.1, rotate: 15 }}
+            whileTap={{ scale: 0.9 }}
+            className="p-2.5 hover:bg-dark-800 rounded-full transition-colors text-gray-400 hover:text-white"
+          >
             <Settings className="w-5 h-5" />
-          </button>
+          </motion.button>
         </div>
-      </nav>
+      </motion.nav>
 
-      {/* Main Content */}
-      <main className="flex-1 p-6 lg:p-10 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
-        {/* Left Side: Video Feed */}
-        <div className="lg:col-span-8 flex flex-col gap-4 lg:gap-6 order-1">
+      <main className="flex-1 p-4 lg:p-10 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 overflow-y-auto">
+        <motion.div 
+          initial={{ x: -30, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ delay: 0.2 }}
+          className="lg:col-span-8 flex flex-col gap-6"
+        >
           <div 
             ref={videoContainerRef}
-            className="glass-panel rounded-2xl overflow-hidden shadow-2xl relative group aspect-video bg-dark-900 border border-dark-800 flex items-center justify-center"
+            className="glass-panel rounded-3xl overflow-hidden shadow-2xl relative group aspect-video bg-dark-900 border border-dark-800 flex items-center justify-center"
           >
-            
-            {/* The Video Source / Snapshot */}
-            {snapshotUrl ? (
-              <img src={snapshotUrl} alt="Camera Feed" className="w-full h-full object-contain bg-black" />
-            ) : (
-              <div className="flex flex-col items-center justify-center text-gray-500">
-                <Video className="w-16 h-16 mb-4 opacity-20" />
-                <p className="text-lg font-medium">No Feed Available</p>
-                <p className="text-sm">Wake up the camera and start the stream</p>
-              </div>
-            )}
-            
-            {/* Stream Error Overlay */}
-            {streamError && (
-              <div className="absolute inset-0 bg-dark-950/80 backdrop-blur-sm flex items-center justify-center">
-                <div className="text-center text-red-400 bg-red-950/30 px-6 py-4 rounded-xl border border-red-900/50">
-                  <p>{streamError}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Live Indicator */}
-            {isStreaming && (
-              <div className="absolute top-4 left-4 bg-dark-950/60 backdrop-blur px-3 py-1.5 rounded-lg flex items-center gap-2 border border-dark-800">
-                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                <span className="text-xs font-semibold text-gray-200">LIVE FEED</span>
-              </div>
-            )}
-            
-
-
-            {/* Video Overlays (Controls that appear on hover) */}
-            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-dark-950/90 to-transparent p-6 opacity-0 group-hover:opacity-100 transition-opacity flex justify-between items-end pb-4 pt-16">
-              <div className="flex items-center gap-4">
-                <button 
-                  onClick={toggleStream}
-                  className="bg-magma-600 hover:bg-magma-500 text-white px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 transition-all shadow-lg shadow-magma-600/20"
+            <AnimatePresence mode="wait">
+              {snapshotUrl ? (
+                <motion.img 
+                  key={snapshotUrl}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  src={snapshotUrl} 
+                  alt="Camera Feed" 
+                  className="w-full h-full object-contain bg-black shadow-inner" 
+                />
+              ) : (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  className="flex flex-col items-center justify-center text-gray-500"
                 >
-                  {isStreaming ? "Stop Live View" : "Start Live View"}
-                </button>
-              </div>
-              <button 
-                onClick={toggleFullscreen}
-                className="text-gray-300 hover:text-white transition-colors bg-dark-800/80 p-2 rounded-lg backdrop-blur"
+                  <motion.div
+                    animate={{ scale: [1, 1.1, 1], opacity: [0.2, 0.4, 0.2] }}
+                    transition={{ duration: 4, repeat: Infinity }}
+                  >
+                    <Video className="w-20 h-20 mb-4" />
+                  </motion.div>
+                  <p className="text-xl font-bold text-gray-400">Offline</p>
+                  <p className="text-sm text-gray-500 mt-2">Activate camera to initialize feed</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {isStreaming && (
+              <motion.div 
+                animate={{ top: ['0%', '100%'] }}
+                transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+                className="absolute inset-x-0 h-[3px] bg-magma-500/20 shadow-[0_0_20px_rgba(244,63,94,0.4)] z-10 pointer-events-none"
+              />
+            )}
+            
+            <AnimatePresence>
+              {streamError && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="absolute inset-0 bg-dark-950/80 backdrop-blur-md flex items-center justify-center z-20"
+                >
+                  <div className="text-center text-red-400 bg-red-950/20 px-8 py-6 rounded-3xl border border-red-900/30">
+                    <p className="font-bold text-lg mb-1">Stream Error</p>
+                    <p className="text-red-400/80">{streamError}</p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {isStreaming && (
+              <motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="absolute top-6 left-6 bg-dark-950/70 backdrop-blur-lg px-4 py-2 rounded-xl flex items-center gap-3 border border-magma-500/30 z-30 shadow-2xl"
               >
-                <Maximize className="w-5 h-5" />
-              </button>
-            </div>
+                <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.8)]" />
+                <span className="text-sm font-bold text-gray-100 uppercase tracking-widest">Live View</span>
+              </motion.div>
+            )}
+
+            <motion.div 
+              className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-dark-950/95 to-transparent p-8 opacity-0 group-hover:opacity-100 transition-all duration-500 flex justify-between items-end z-30 transform translate-y-4 group-hover:translate-y-0"
+            >
+              <motion.button 
+                whileHover={{ scale: 1.05, backgroundColor: '#f43f5e' }}
+                whileTap={{ scale: 0.95 }}
+                onClick={toggleStream}
+                className="bg-magma-600 text-white px-6 py-3 rounded-2xl font-bold text-sm flex items-center gap-3 transition-colors shadow-2xl shadow-magma-600/40"
+              >
+                {isStreaming ? "Terminate Stream" : "Establish Live Feed"}
+              </motion.button>
+              
+              <motion.button 
+                whileHover={{ scale: 1.1, backgroundColor: 'rgba(31, 41, 55, 0.9)', rotate: 90 }}
+                whileTap={{ scale: 0.9 }}
+                onClick={toggleFullscreen}
+                className="text-gray-300 transition-colors bg-dark-800/60 p-3 rounded-2xl backdrop-blur-xl border border-dark-700/50"
+              >
+                <Maximize className="w-6 h-6" />
+              </motion.button>
+            </motion.div>
           </div>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="glass-panel p-5 rounded-2xl flex flex-col justify-between">
-              <h3 className="text-gray-400 text-sm font-medium mb-1">Device Model</h3>
-              <p className="text-lg font-semibold text-gray-100">DS-2DE2C400IWG-K</p>
-            </div>
-            <div className="glass-panel p-5 rounded-2xl flex flex-col justify-between">
-              <h3 className="text-gray-400 text-sm font-medium mb-1">Network</h3>
-              <p className="text-lg font-semibold text-emerald-400 flex items-center gap-2">
-                <Activity className="w-4 h-4" /> Good Signal
-              </p>
-            </div>
-            <div className="glass-panel p-5 rounded-2xl flex flex-col justify-between sm:col-span-2">
-              <h3 className="text-gray-400 text-sm font-medium mb-1">Device ID</h3>
-              <p className="text-lg font-semibold text-gray-100 truncate">{DEVICE_UUID}</p>
-            </div>
-          </div>
-        </div>
+          <motion.div 
+            initial="hidden" animate="visible"
+            variants={{ visible: { transition: { staggerChildren: 0.1 } } }}
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"
+          >
+            {[
+              { label: 'Device Model', value: 'DS-2DE2C400IWG-K' },
+              { label: 'Network', value: 'Excellent', icon: Activity, color: 'text-emerald-400' },
+              { label: 'Device ID', value: DEVICE_UUID, span: 'sm:col-span-2' }
+            ].map((item, idx) => (
+              <motion.div 
+                key={idx}
+                variants={{ hidden: { opacity: 0, y: 20 }, visible: { opacity: 1, y: 0 } }}
+                className={`glass-panel p-6 rounded-3xl flex flex-col justify-between hover:bg-dark-800/40 transition-colors border border-dark-800/50 shadow-xl ${item.span || ""}`}
+              >
+                <h3 className="text-gray-500 text-xs font-bold uppercase tracking-widest mb-2">{item.label}</h3>
+                <p className={`text-base font-black ${item.color || "text-gray-200"} truncate flex items-center gap-2`}>
+                  {item.icon && <item.icon className="w-4 h-4" />}
+                  {item.value}
+                </p>
+              </motion.div>
+            ))}
+          </motion.div>
+        </motion.div>
 
-        {/* Right Side: Control Dashboard */}
-        <div className="lg:col-span-4 flex flex-col gap-6 order-2 lg:order-2">
-          <div className="glass-panel rounded-3xl p-6 lg:p-8 flex flex-col gap-8 h-full">
+        <motion.div 
+          initial={{ x: 30, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+          transition={{ delay: 0.4 }}
+          className="lg:col-span-4 flex flex-col gap-8 lg:order-2"
+        >
+          <div className="glass-panel rounded-3xl p-8 flex flex-col gap-10 h-full border border-dark-800/50 bg-dark-900/40 shadow-[0_20px_50px_rgba(0,0,0,0.3)]">
             <div>
-              <h2 className="text-xl font-bold mb-2">Device Controls</h2>
-              <p className="text-sm text-gray-400">Manage camera state and actions</p>
+              <h2 className="text-2xl font-black mb-3">Control Center</h2>
+              <div className="h-1.5 w-12 bg-magma-600 rounded-full mb-4 shadow-[0_0_15px_rgba(244,63,94,0.6)]" />
+              <p className="text-sm text-gray-500 leading-relaxed font-medium">Coordinate device state and hardware peripherals</p>
             </div>
             
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4 flex-1">
-              {/* Wake Up Button */}
-              <button 
-                onClick={wakeUpCamera}
-                disabled={isWaking || cameraStatus === 'Online'}
-                className="group relative overflow-hidden rounded-2xl p-6 flex flex-col items-center justify-center text-center gap-3 transition-all duration-300 border border-dark-700 bg-dark-800/50 hover:bg-dark-800 hover:border-magma-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-colors ${cameraStatus === 'Online' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-500 group-hover:bg-amber-500/20'}`}>
-                  {isWaking ? (
-                    <div className="w-6 h-6 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <Power className="w-7 h-7" />
-                  )}
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-200">Wake Up Device</h3>
-                  <p className="text-xs text-gray-500 mt-1">Exit from sleep mode</p>
-                </div>
-              </button>
-
-              {/* Snapshot Button */}
-              <button 
-                onClick={() => manualCapture(false)}
-                className="group relative overflow-hidden rounded-2xl p-6 flex flex-col items-center justify-center text-center gap-3 transition-all duration-300 border border-dark-700 bg-dark-800/50 hover:bg-dark-800 hover:border-blue-500/50"
-              >
-                <div className="w-14 h-14 rounded-full flex items-center justify-center transition-colors bg-blue-500/10 text-blue-400 group-hover:bg-blue-500/20">
-                  <ImageIcon className="w-7 h-7" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-gray-200">Manual Capture</h3>
-                  <p className="text-xs text-gray-500 mt-1">Take an instant photo</p>
-                </div>
-              </button>
-
-              {/* Two-Way Audio Button */}
-              <button 
-                onClick={toggleAudio}
-                className={`group relative overflow-hidden rounded-2xl p-6 flex flex-col items-center justify-center text-center gap-3 transition-all duration-300 border  ${isAudioActive ? 'border-magma-500 bg-magma-500/10 shadow-[0_0_30px_rgba(244,63,94,0.15)] ring-1 ring-magma-500/50' : 'border-dark-700 bg-dark-800/50 hover:bg-dark-800 mt-0 hover:border-purple-500/50'}`}
-              >
-                <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-500 ${isAudioActive ? 'bg-magma-500 text-white shadow-lg shadow-magma-500/40 animate-pulse' : 'bg-purple-500/10 text-purple-400 group-hover:bg-purple-500/20'}`}>
-                  {isAudioActive ? <Volume2 className="w-7 h-7" /> : <Mic className="w-7 h-7" />}
-                </div>
-                <div>
-                  <h3 className={`font-semibold ${isAudioActive ? 'text-magma-400' : 'text-gray-200'}`}>
-                    {isAudioActive ? "Audio Active (Speak Now)" : "Two-Way Audio"}
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-1">Start microphone channel</p>
-                </div>
-                
-                {/* Audio waves animation when active */}
-                {isAudioActive && (
-                  <div className="absolute top-4 right-4 flex gap-1 items-end h-4 opacity-70">
-                    <div className="w-1 bg-magma-500 rounded-full animate-[bounce_1s_infinite] h-2"></div>
-                    <div className="w-1 bg-magma-500 rounded-full animate-[bounce_1.2s_infinite] h-4"></div>
-                    <div className="w-1 bg-magma-500 rounded-full animate-[bounce_0.8s_infinite] h-3"></div>
+            <motion.div 
+              initial="hidden" animate="visible"
+              variants={{ visible: { transition: { staggerChildren: 0.1, delayChildren: 0.6 } } }}
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-5"
+            >
+              {[
+                { 
+                  id: 'wake', onClick: wakeUpCamera, disabled: isWaking || cameraStatus === 'Online',
+                  icon: Power, label: 'Initialize Camera', desc: 'Exit idle low-power mode',
+                  active: cameraStatus === 'Online', loading: isWaking,
+                  color: 'text-emerald-500', bg: 'bg-emerald-500/10', border: 'hover:border-emerald-500/40'
+                },
+                {
+                  id: 'capture', onClick: () => manualCapture(false), icon: ImageIcon,
+                  label: 'Instant Capture', desc: 'Save current frame to disk',
+                  color: 'text-blue-500', bg: 'bg-blue-500/10', border: 'hover:border-blue-500/40'
+                },
+                {
+                  id: 'audio', onClick: toggleAudio, icon: isAudioActive ? Volume2 : Mic,
+                  label: isAudioActive ? "Stream Audio active" : "Global Mic Input",
+                  desc: 'Activate two-way channel', active: isAudioActive,
+                  color: 'text-magma-500', bg: 'bg-magma-500/10', border: 'hover:border-magma-500/40'
+                }
+              ].map((btn) => (
+                <motion.button 
+                  key={btn.id}
+                  variants={{ hidden: { opacity: 0, x: 20 }, visible: { opacity: 1, x: 0 } }}
+                  whileHover={{ x: 5 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={btn.onClick}
+                  disabled={btn.disabled}
+                  className={`group relative overflow-hidden rounded-3xl p-6 flex flex-col items-center justify-center text-center gap-4 transition-all duration-300 border ${
+                    btn.active 
+                      ? 'border-magma-500 bg-magma-600/10 shadow-[0_0_40px_rgba(244,63,94,0.1)]' 
+                      : 'border-dark-700 bg-dark-800/40 ' + btn.border
+                  } disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed`}
+                >
+                  <div className={`w-16 h-16 rounded-3xl flex items-center justify-center transition-all duration-500 transform group-hover:scale-110 ${
+                    btn.active ? 'bg-magma-600 text-white shadow-magma-600/40 shadow-2xl pulse-custom' : btn.bg + ' ' + btn.color
+                  }`}>
+                    {btn.loading ? (
+                      <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <btn.icon className="w-8 h-8" />
+                    )}
                   </div>
-                )}
-              </button>
-            </div>
+                  <div>
+                    <h3 className={`font-black text-lg ${btn.active ? 'text-magma-500' : 'text-gray-200'}`}>{btn.label}</h3>
+                    <p className="text-xs text-gray-500 mt-2 font-bold uppercase tracking-tighter opacity-70">{btn.desc}</p>
+                  </div>
+                  
+                  {btn.id === 'audio' && btn.active && (
+                    <div className="absolute top-6 right-8 flex gap-1 items-end h-6 opacity-80">
+                      {[0.8, 1.2, 0.5, 1.1, 0.9].map((d, i) => (
+                        <motion.div 
+                          key={i}
+                          animate={{ height: [4, 16, 4] }}
+                          transition={{ duration: d, repeat: Infinity }}
+                          className="w-1.5 bg-magma-600 rounded-full"
+                        />
+                      ))}
+                    </div>
+                  )}
+                </motion.button>
+              ))}
+            </motion.div>
             
-            <div className="mt-auto pt-6 border-t border-dark-800 text-center">
-              <p className="text-xs text-gray-600">ISAPI Protocol via Secure Gateway</p>
+            <div className="mt-auto pt-8 border-t border-dark-900 text-center flex items-center justify-center gap-2 opacity-30 grayscale hover:grayscale-0 hover:opacity-100 transition-all cursor-default">
+              <Camera className="w-4 h-4" />
+              <p className="text-[10px] font-black tracking-widest uppercase">Encryption: ISAPI-SSL enabled</p>
             </div>
           </div>
-        </div>
-
+        </motion.div>
       </main>
     </div>
   );

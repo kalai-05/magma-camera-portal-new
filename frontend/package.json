@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "axios": "^1.13.6",
+    "framer-motion": "^12.35.2",
     "hls.js": "^1.6.15",
     "jsmpeg": "^1.0.0",
     "lucide-react": "^0.577.0",

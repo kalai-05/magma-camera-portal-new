@@ -9,24 +9,34 @@
 }
 
 .glass-panel {
-  @apply bg-dark-800/60 backdrop-blur-md border border-dark-900/50 shadow-xl;
+  @apply bg-dark-900/60 backdrop-blur-xl border border-dark-800/40 shadow-[0_8px_32px_rgba(0,0,0,0.37)] ring-1 ring-white/5;
+}
+
+@keyframes pulse-custom {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.4); }
+  70% { transform: scale(1.05); box-shadow: 0 0 20px 10px rgba(244, 63, 94, 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(244, 63, 94, 0); }
+}
+
+.pulse-custom {
+  animation: pulse-custom 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
 }
 
 /* Custom scrollbar for webkit */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(31, 41, 55, 0.5); 
+  background: rgba(15, 23, 42, 0.9); 
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(136, 19, 55, 0.5); 
-  border-radius: 4px;
+  background: linear-gradient(to bottom, #f43f5e, #be123c); 
+  border-radius: 99px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(225, 29, 72, 0.8); 
+  background: #f43f5e; 
 }
