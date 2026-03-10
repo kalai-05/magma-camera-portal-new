@@ -25,6 +25,7 @@ function App() {
   const [streamError, setStreamError] = useState(null);
   
   const videoIntervalRef = useRef(null);
+  const videoContainerRef = useRef(null);
 
   useEffect(() => {
     // Initial status check could go here if there was a status API
@@ -187,6 +188,24 @@ function App() {
     }
   };
 
+  const toggleFullscreen = () => {
+    if (!videoContainerRef.current) return;
+    
+    if (!document.fullscreenElement) {
+      if (videoContainerRef.current.requestFullscreen) {
+        videoContainerRef.current.requestFullscreen();
+      } else if (videoContainerRef.current.webkitRequestFullscreen) { /* Safari */
+        videoContainerRef.current.webkitRequestFullscreen();
+      } else if (videoContainerRef.current.msRequestFullscreen) { /* IE11 */
+        videoContainerRef.current.msRequestFullscreen();
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    }
+  };
+
   useEffect(() => {
     return () => {
       if (videoIntervalRef.current) clearInterval(videoIntervalRef.current);
@@ -237,8 +256,11 @@ function App() {
       <main className="flex-1 p-6 lg:p-10 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-8">
         
         {/* Left Side: Video Feed */}
-        <div className="lg:col-span-8 flex flex-col gap-6">
-          <div className="glass-panel rounded-2xl overflow-hidden shadow-2xl relative group aspect-video bg-dark-900 border border-dark-800 flex items-center justify-center">
+        <div className="lg:col-span-8 flex flex-col gap-4 lg:gap-6 order-1">
+          <div 
+            ref={videoContainerRef}
+            className="glass-panel rounded-2xl overflow-hidden shadow-2xl relative group aspect-video bg-dark-900 border border-dark-800 flex items-center justify-center"
+          >
             
             {/* The Video Source / Snapshot */}
             {snapshotUrl ? (
@@ -280,13 +302,16 @@ function App() {
                   {isStreaming ? "Stop Live View" : "Start Live View"}
                 </button>
               </div>
-              <button className="text-gray-300 hover:text-white transition-colors bg-dark-800/80 p-2 rounded-lg backdrop-blur">
+              <button 
+                onClick={toggleFullscreen}
+                className="text-gray-300 hover:text-white transition-colors bg-dark-800/80 p-2 rounded-lg backdrop-blur"
+              >
                 <Maximize className="w-5 h-5" />
               </button>
             </div>
           </div>
           
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="glass-panel p-5 rounded-2xl flex flex-col justify-between">
               <h3 className="text-gray-400 text-sm font-medium mb-1">Device Model</h3>
               <p className="text-lg font-semibold text-gray-100">DS-2DE2C400IWG-K</p>
@@ -297,7 +322,7 @@ function App() {
                 <Activity className="w-4 h-4" /> Good Signal
               </p>
             </div>
-            <div className="glass-panel p-5 rounded-2xl flex flex-col justify-between col-span-2">
+            <div className="glass-panel p-5 rounded-2xl flex flex-col justify-between sm:col-span-2">
               <h3 className="text-gray-400 text-sm font-medium mb-1">Device ID</h3>
               <p className="text-lg font-semibold text-gray-100 truncate">{DEVICE_UUID}</p>
             </div>
@@ -305,7 +330,7 @@ function App() {
         </div>
 
         {/* Right Side: Control Dashboard */}
-        <div className="lg:col-span-4 flex flex-col gap-6">
+        <div className="lg:col-span-4 flex flex-col gap-6 order-2 lg:order-2">
           <div className="glass-panel rounded-3xl p-6 lg:p-8 flex flex-col gap-8 h-full">
             <div>
               <h2 className="text-xl font-bold mb-2">Device Controls</h2>
