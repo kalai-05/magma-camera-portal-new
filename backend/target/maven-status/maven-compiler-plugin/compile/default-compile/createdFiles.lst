@@ -1,2 +1,3 @@
-com/magma/cameraportal/controller/ProxyController.class
 com/magma/cameraportal/CameraPortalApplication.class
+com/magma/cameraportal/controller/ProxyController.class
+com/magma/cameraportal/controller/ProxyController$1.class
