@@ -53,6 +53,11 @@ function App() {
       keepAliveInterval = setInterval(() => {
         wakeUpCamera(false);
       }, 30000);
+      
+      // Auto-start live view when camera becomes Online
+      if (!isStreaming) {
+        toggleStream();
+      }
     }
     return () => {
       if (keepAliveInterval) clearInterval(keepAliveInterval);
