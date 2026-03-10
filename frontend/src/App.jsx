@@ -268,12 +268,7 @@ function App() {
               </div>
             )}
             
-            {/* RTSP Overlay */}
-            {rtspUrl && (
-              <div className="absolute top-4 right-4 bg-dark-950/80 backdrop-blur px-4 py-2 rounded-lg border border-dark-700 max-w-sm">
-                 <p className="text-[10px] text-gray-400 font-mono tracking-tight break-all">RTSP Source: {rtspUrl}</p>
-              </div>
-            )}
+
 
             {/* Video Overlays (Controls that appear on hover) */}
             <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-dark-950/90 to-transparent p-6 opacity-0 group-hover:opacity-100 transition-opacity flex justify-between items-end pb-4 pt-16">
